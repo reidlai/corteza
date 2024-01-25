@@ -135,5 +135,11 @@ export default {
       return edit || view
     },
   },
+
+  methods: {
+    getFieldCypressId (field) {
+      return `field-${field.toLowerCase().split(' ').join('-')}`
+    },
+  },
 }
 </script>
