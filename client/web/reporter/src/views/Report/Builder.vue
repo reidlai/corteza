@@ -2,7 +2,10 @@
   <div
     class="d-flex overflow-auto p-2 w-100"
   >
-    <portal to="topbar-title">
+    <portal
+      v-if="!fetchingReport"
+      to="topbar-title"
+    >
       {{ pageTitle }}
     </portal>
 
@@ -13,10 +16,10 @@
           :options="scenarioOptions"
           :get-option-key="getOptionKey"
           :placeholder="$t('builder:pick-scenario')"
+          :disabled="processing || fetchingReport"
           size="sm"
           @input="refreshReport()"
         />
-
         <b-input-group-append>
           <b-button
             v-b-tooltip.noninteractive.hover="{ title: $t('builder:tooltip.configure-scenarios'), container: '#body' }"
@@ -41,7 +44,6 @@
       >
         {{ $t('builder:datasources.label') }}
       </b-button>
-
       <b-button-group
         size="sm"
       >
@@ -72,8 +74,15 @@
       </b-button-group>
     </portal>
 
+    <div
+      v-if="fetchingReport"
+      class="d-flex align-items-center justify-content-center w-100 h-100"
+    >
+      <b-spinner />
+    </div>
+
     <grid
-      v-if="report && canRead && showReport"
+      v-if="report && canRead && showReport && !fetchingReport"
       :blocks.sync="reportBlocks"
       editable
       @item-updated="onBlockUpdated"
@@ -97,7 +106,6 @@
                 class="text-warning"
               />
             </div>
-
             <b-button-group>
               <b-button
                 v-b-tooltip.noninteractive.hover="{ title: $t('builder:tooltip.add.displayElement'), container: '#body' }"
@@ -109,7 +117,6 @@
                   :icon="['fas', 'plus']"
                 />
               </b-button>
-
               <b-button
                 v-b-tooltip.noninteractive.hover="{ title: $t('builder:tooltip.edit.block'), container: '#body' }"
                 variant="outline-light"
@@ -121,7 +128,6 @@
                 />
               </b-button>
             </b-button-group>
-
             <c-input-confirm
               :tooltip="$t('builder:tooltip.delete.block')"
               show-icon
@@ -130,7 +136,6 @@
               @confirmed="deleteBlock(index)"
             />
           </div>
-
           <block
             v-if="block"
             :index="index"
@@ -142,7 +147,6 @@
         </div>
       </template>
     </grid>
-
     <b-modal
       v-model="blocks.showConfigurator"
       :title="$t('builder:block.configuration')"
@@ -175,7 +179,6 @@
               :placeholder="$t('builder:block.title')"
             />
           </b-form-group>
-
           <b-form-group
             :label="$t('builder:description')"
             label-class="text-primary"
@@ -185,7 +188,6 @@
               :placeholder="$t('builder:block.description')"
             />
           </b-form-group>
-
           <b-form-group
             :label="$t('builder:layout')"
             label-class="text-primary"
@@ -198,7 +200,6 @@
             />
           </b-form-group>
         </b-tab>
-
         <b-tab
           :active="!!currentBlock.elements.length"
           :title="$t('builder:elements')"
@@ -217,9 +218,7 @@
                 :icon="['fas', 'bars']"
                 class="text-secondary grab"
               />
-            </template>
-
-            <template #configurator>
+            </template>            <template #configurator>
               <display-element-configurator
                 v-if="currentDisplayElement"
                 :display-element.sync="currentDisplayElement"
@@ -232,7 +231,6 @@
         </b-tab>
       </b-tabs>
     </b-modal>
-
     <b-modal
       v-model="datasources.showConfigurator"
       :title="$t('builder:datasources.label')"
@@ -260,7 +258,6 @@
             {{ datasourceLabel(step, datasources.currentIndex) }}
           </span>
         </template>
-
         <template #configurator>
           <component
             :is="getDatasourceComponent(datasources.tempItems[datasources.currentIndex])"
@@ -272,7 +269,6 @@
           />
         </template>
       </configurator>
-
       <template #modal-footer>
         <c-button-submit
           data-test-id="button-save"
@@ -283,7 +279,6 @@
         />
       </template>
     </b-modal>
-
     <b-modal
       v-model="displayElements.showSelector"
       size="lg"
@@ -298,7 +293,6 @@
         @select="addDisplayElement"
       />
     </b-modal>
-
     <b-modal
       v-model="datasources.showSelector"
       size="lg"
@@ -314,7 +308,6 @@
         @select="addDatasource"
       />
     </b-modal>
-
     <b-modal
       v-model="scenarios.showConfigurator"
       size="xl"
@@ -341,7 +334,6 @@
             {{ label }}
           </span>
         </template>
-
         <template #configurator>
           <scenario-configurator
             v-if="currentScenario"
@@ -352,7 +344,6 @@
         </template>
       </configurator>
     </b-modal>
-
     <portal to="report-toolbar">
       <editor-toolbar
         :back-link="{ name: 'report.list' }"
@@ -361,12 +352,15 @@
         :processing="processing"
         :processing-save="processingSave"
         :processing-delete="processingDelete"
+        :processing-clone="processingClone"
+        @clone="handleReportCloning"
         @delete="handleDelete"
         @save="handleReportSave"
       >
         <b-button
           variant="light"
           size="lg"
+          :disabled="processing"
           @click="createBlock"
         >
           <font-awesome-icon
@@ -426,6 +420,8 @@ export default {
       processing: false,
       processingSave: false,
       processingDelete: false,
+      processingClone: false,
+      fetchingReport: false,
 
       showReport: true,
 
@@ -511,6 +507,8 @@ export default {
 
         selected: undefined,
       },
+
+      gridKey: 0,
     }
   },
 
@@ -658,15 +656,23 @@ export default {
       handler (reportID) {
         this.unsavedBlocks.clear()
         this.scenarios.selected = undefined
-
+        this.reportBlocks = []
+        this.report = undefined
         if (reportID) {
           this.processing = true
+          this.fetchingReport = true
 
           this.fetchReport(this.reportID)
             .then(() => {
               this.mapBlocks()
-            }).finally(() => {
-              this.processing = false
+            }).catch(() => {
+              this.toastErrorHandler(this.$t('notification:report.loadFailed'))
+            })
+            .finally(() => {
+              setTimeout(() => {
+                this.fetchingReport = false
+                this.processing = false
+              }, 400)
             })
         }
       },
@@ -844,6 +850,12 @@ export default {
         .finally(() => {
           this.processingSave = false
         })
+    },
+
+    handleReportCloning () {
+      this.handleClone(this.report).then(({ reportID }) => {
+        this.$router.push({ name: 'report.builder', params: { reportID } })
+      })
     },
 
     mapBlocks () {
