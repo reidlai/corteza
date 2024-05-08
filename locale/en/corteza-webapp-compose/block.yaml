@@ -306,6 +306,12 @@ recordList:
       remove: Remove field
     reset: Reset
   drillDown:
+    optionsModal:
+      title: Extend Drilldown Filter
+      extendOptions: Extend options
+      option:
+        overwrite: Overwrite
+        or: OR
     filter:
       label: Drill down filter
   tooltip:

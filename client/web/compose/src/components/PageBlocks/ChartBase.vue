@@ -172,7 +172,8 @@ export default {
         // Construct its uniqueID to identify it
         const recordListUniqueID = [pageID, recordID, drillDown.blockID, false].map(v => v || NoID).join('-')
 
-        this.$root.$emit(`drill-down-recordList:${recordListUniqueID}`, prefilter)
+        const filterName = `${dimensions} = ${drillDownValue}`
+        this.$root.$emit(`drill-down-recordList:${recordListUniqueID}`, { filterID: `drillDown-${this.block.blockID}`, prefilter, filterName })
       } else {
         const { title } = this.block
         const { fields = [] } = this.options.drillDown.recordListOptions || {}
