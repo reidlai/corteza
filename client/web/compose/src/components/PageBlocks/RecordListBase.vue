@@ -141,12 +141,18 @@
               <b-form-tag
                 v-for="(f, i) in activeFilters"
                 :key="i"
-                :title="f.name"
                 variant="light"
                 pill
                 class="align-items-center ml-2"
                 @remove="removeFilter(i)"
-              />
+              >
+                <template v-if="f.drilldown && f.name">
+                  {{ `${f.name} IS ${(f.values || []).join(' OR ')}` }}
+                </template>
+                <template v-else>
+                  {{ f.name }}
+                </template>
+              </b-form-tag>
             </b-form-tags>
           </div>
 
@@ -610,28 +616,6 @@
         @save="setStorageRecordListFilterPreset"
         @close="showCustomPresetFilterModal = false"
       />
-
-      <b-modal
-        v-model="extendDrillDownFilter.modal"
-        size="lg"
-        :title="$t('recordList.drillDown.optionsModal.title')"
-        body-class="p-0"
-        @hide="extendDrillDownFilter.modal = false"
-        @ok="extendCurrentDrillDownFilter()"
-      >
-        <div class="card-body">
-          <b-form-group
-            :label="$t('recordList.drillDown.optionsModal.extendOptions')"
-            label-class="text-primary"
-          >
-            <b-form-radio-group
-              v-model="extendDrillDownFilter.selectedOption"
-              :options="extendDrillDownFilter.options"
-              stacked
-            />
-          </b-form-group>
-        </div>
-      </b-modal>
     </template>
 
     <template
@@ -875,22 +859,10 @@ export default {
 
       customConfiguredFields: [],
 
-      extendDrillDownFilter: {
-        modal: false,
-        options: [
-          {
-            value: 'overwrite',
-            text: this.$t('recordList.drillDown.optionsModal.option.overwrite'),
-          },
-          {
-            value: 'or',
-            text: this.$t('recordList.drillDown.optionsModal.option.or'),
-          },
-        ],
-        selectedOption: undefined,
-        existingFilter: undefined,
-        newFilter: undefined,
-      },
+      // extendDrillDownFilter: {
+      //   existingFilter: undefined,
+      //   newFilter: undefined,
+      // },
     }
   },
 
@@ -1088,6 +1060,31 @@ export default {
 
       return this.selected.map(r => `recordID='${r}'`).join(' OR ')
     },
+
+    groupDrillDownRecordList () {
+      const groupedData = {}
+      for (let i = 0; i < this.recordListFilter.length; i++) {
+        const group = this.recordListFilter[i]
+
+        for (let j = 0; j < group.filter.length; j++) {
+          const filter = group.filter[j]
+          // for (let [index, filter] of group.filter) {
+          let name = filter.name
+          let value = filter.value
+
+          if (!groupedData[name]) {
+            groupedData[name] = {
+              values: [value],
+            }
+          } else {
+            groupedData[name].values.push(value)
+            // groupedData[name].indexes.push(j)
+          }
+        }
+      }
+      console.log('groupedData', groupedData)
+      return groupedData
+    },
   },
 
   watch: {
@@ -1183,7 +1180,9 @@ export default {
     },
 
     onFilter (filter = []) {
+      console.log('filter rl', filter)
       filter.forEach(f => {
+        console.log('this.activeFilters.find(({ name }) => name === f.name)', this.activeFilters.find(({ name }) => name === f.name))
         if (this.activeFilters.find(({ name }) => name === f.name)) {
           const filterPresets = this.filterPresets.find(p => p.name === f.name)
 
@@ -1205,6 +1204,8 @@ export default {
           f.name = this.$t('recordList.customFilter')
         }
       })
+
+      console.log('filter 2', filter)
 
       this.recordListFilter = filter
       this.setStorageRecordListFilter()
@@ -1854,61 +1855,53 @@ export default {
       this.refresh(true)
     },
 
-    setDrillDownFilter ({ prefilter: drillDownFilter, filterName = 'drilldown', filterID }) {
-      if (this.activeFilters.find(({ id }) => id === filterID)) {
-        this.extendDrillDownFilter.modal = true
-        this.extendDrillDownFilter.existingFilter = this.drillDownFilter
-        this.extendDrillDownFilter.newFilter = drillDownFilter
-        this.extendDrillDownFilter.newFilterName = filterName
-        this.extendDrillDownFilter.filterID = filterID
-
-        return
+    createDefaultFilter (condition, field = {}, value = undefined, drilldown = undefined) {
+      return {
+        condition,
+        name: field.name,
+        operator: field.isMulti ? 'IN' : '=',
+        value,
+        kind: field.kind,
+        record: new compose.Record(this.recordListModule, {}),
+        drilldown,
       }
+    },
 
+    setDrillDownFilter ({ prefilter: drillDownFilter, name: fieldName, value: fieldValue }) {
       if (drillDownFilter) {
-        this.activeFilters.push({
-          id: filterID || this.activeFilters.length,
-          name: filterName,
-          filter: drillDownFilter,
-        })
-      }
-      this.updateDrillDownFilter(this.activeFilters.map(({ filter = [] }) => filter).join(' AND '))
-    },
+        const field = (this.recordListModule.fields.find(f => f.name === fieldName) || {})
 
-    updateDrillDownFilter (drillDownFilter) {
-      this.drillDownFilter = drillDownFilter
+        if (!this.recordListFilter.length) {
+          this.recordListFilter = [
+            {
+              groupCondition: undefined,
+              filter: [
+                this.createDefaultFilter('Where', field, fieldValue, true),
+              ],
+            },
+          ]
+        } else {
+          const { filter } = this.recordListFilter[0]
+          if (!filter.length || (filter.length && !filter[0].name)) {
+            this.recordListFilter[0].filter[0] = this.createDefaultFilter('OR', field, fieldValue, true)
+          } else {
+            this.recordListFilter[0].filter.push(this.createDefaultFilter('OR', field, fieldValue, true))
+          }
+        }
+
+        let activeFilterIdx = this.activeFilters.findIndex(({ id }) => id === field.name)
+        if (activeFilterIdx > -1) {
+          this.activeFilters[activeFilterIdx].values.push(fieldValue)
+        } else {
+          this.activeFilters.push({
+            id: field.name,
+            drilldown: true,
+            name: field.name,
+            values: [fieldValue],
+          })
+        }
+      }
       this.pullRecords(true)
-    },
-
-    extendCurrentDrillDownFilter () {
-      this.drillDownFilterOptionsModal = !this.drillDownFilterOptionsModal
-      const { selectedOption, existingFilter, newFilter, newFilterName, filterID } = this.extendDrillDownFilter
-
-      const idx = this.activeFilters.findIndex(({ id }) => id === filterID)
-
-      if (idx < 0) return
-
-      switch (selectedOption) {
-        case 'overwrite': {
-          this.activeFilters[idx] = {
-            ...this.activeFilters[idx],
-            name: newFilterName,
-            filter: newFilter,
-          }
-          break
-        }
-        case 'or': {
-          this.activeFilters[idx] = {
-            ...this.activeFilters[idx],
-            name: `${this.activeFilters[idx].name} OR ${newFilterName}`,
-            filter: `${existingFilter} OR ${newFilter}`,
-          }
-          break
-        }
-      }
-
-      this.updateDrillDownFilter(this.activeFilters.map(({ filter = [] }) => filter).join(' AND '))
-      this.extendDrillDownFilter.selectedOption = undefined
     },
 
     isInlineRestoreActionVisible ({ deletedAt }) {
@@ -2015,11 +2008,36 @@ export default {
     },
 
     removeFilter (filterIndex) {
+      const filter = this.activeFilters[filterIndex]
+
+      if (filter.drilldown) {
+        this.recordListFilter = this.recordListFilter.map((group) => {
+          return {
+            ...group,
+            filter: (group.filter || []).filter(({ name, drilldown }) => !(name === filter.id && drilldown)),
+          }
+        })
+
+        this.activeFilters.splice(filterIndex, 1)
+        this.setStorageRecordListFilter()
+        this.refresh(true)
+        return
+      }
+
       this.activeFilters.splice(filterIndex, 1)
 
-      if (this.drillDownFilter && !this.activeFilters.some(({ id }) => String(id).includes('drillDown'))) {
-        this.setDrillDownFilter({ prefilter: undefined })
-      }
+      let temp = this.recordListFilter.map((group) => {
+        return {
+          ...group,
+          filter: (group.filter || []).filter(({ name, drilldown }) => !(name === filter.id && drilldown)),
+        }
+      })
+
+      console.log('temp', temp)
+
+      // if (this.drillDownFilter && !this.activeFilters.some(({ id }) => String(id).includes('drillDown'))) {
+      //   this.setDrillDownFilter({ prefilter: undefined })
+      // }
 
       this.recordListFilter = this.recordListFilter.filter(({ name }) => !name || this.activeFilters.find((f) => f.name === name))
 

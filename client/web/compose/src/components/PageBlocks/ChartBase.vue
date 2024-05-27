@@ -182,6 +182,7 @@ export default {
 
       // Get recordListID that is linked
       let { moduleID, dimensions, filter, field } = this.filter
+      console.log('{ moduleID, dimensions, filter, field }', { moduleID, dimensions, filter, field })
       const { name, label } = field || {}
 
       // Construct filter
@@ -194,8 +195,11 @@ export default {
         // Construct its uniqueID to identify it
         const recordListUniqueID = [pageID, recordID, drillDown.blockID, false].map(v => v || NoID).join('-')
 
-        const filterName = `${label || name} = ${drillDownValue}`
-        this.$root.$emit(`drill-down-recordList:${recordListUniqueID}`, { filterID: `drillDown-${this.block.blockID}`, prefilter: dimensionFilter, filterName })
+        this.$root.$emit(`drill-down-recordList:${recordListUniqueID}`, {
+          prefilter: dimensionFilter,
+          name: name || label || dimensions,
+          value: drillDownValue,
+        })
       } else {
         filter = filter ? `(${filter})` : ''
         const prefilter = [dimensionFilter, filter].filter(f => f).join(' AND ')
