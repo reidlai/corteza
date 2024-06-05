@@ -854,6 +854,7 @@ export default {
 
     handleReportCloning () {
       this.handleClone(this.report).then(({ reportID }) => {
+        this.$root.$emit('refetch:reports')
         this.$router.push({ name: 'report.builder', params: { reportID } })
       })
     },

@@ -90,6 +90,14 @@ export default {
     },
   },
 
+  created () {
+    this.$root.$on('refetch:reports', this.fetchReports)
+  },
+
+  beforeDestroy () {
+    this.$root.$off('refetch:reports', this.fetchReports)
+  },
+
   methods: {
     fetchReports () {
       this.$SystemAPI.reportList()
