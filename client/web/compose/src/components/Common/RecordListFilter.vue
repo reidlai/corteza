@@ -18,7 +18,7 @@
     <b-popover
       ref="popover"
       custom-class="record-list-filter shadow-sm"
-      triggers="click blur"
+      triggers="click"
       placement="bottom"
       delay="0"
       boundary="window"
@@ -48,7 +48,7 @@
                   :key="`${groupIndex}-${index}`"
                   class="pb-2"
                 >
-                  <b-td
+                  <!-- <b-td
                     class="align-middle"
                     style="width: 1%;"
                   >
@@ -64,7 +64,7 @@
                       v-model="filter.condition"
                       :options="conditions"
                     />
-                  </b-td>
+                  </b-td> -->
 
                   <b-td
                     class="px-2"
@@ -156,7 +156,7 @@
                 <b-tr :key="`addFilter-${groupIndex}`">
                   <b-td class="pb-0">
                     <b-button
-                      variant="link text-decoration-none"
+                      variant="link text-decoration-none d-block mr-auto"
                       style="min-height: 38px; min-width: 84px;"
                       @click="addFilter(groupIndex)"
                     >
@@ -181,15 +181,17 @@
                     <div
                       class="group-separator"
                     >
-                      <b-form-select
+                      <!-- <b-form-select
                         v-if="filterGroup.groupCondition"
                         v-model="filterGroup.groupCondition"
                         class="w-auto"
                         :options="conditions"
-                      />
+                      /> -->
+
+                      <div style="height: 20px; width: 100%;" />
 
                       <b-button
-                        v-else
+                        v-if="groupIndex === (componentFilter.length - 1)"
                         variant="outline-primary"
                         class="btn-add-group bg-white py-2 px-3"
                         @click="addGroup()"

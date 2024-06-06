@@ -179,9 +179,15 @@ export function queryToFilter (searchQuery = '', prefilter = '', fields = [], re
     searchQuery = searchQuery ? `(${searchQuery})` : ''
   }
 
-  const recordListFilterSqlArray = recordListFilter.map(({ groupCondition, filter = [] }) => {
-    groupCondition = groupCondition ? ` ${groupCondition} ` : ''
+  const recordListFilterSqlArray = recordListFilter.map(({ filter = [] }, idx) => {
+    const groupCondition = idx !== (recordListFilter.length - 1) ? ' OR ' : ''
     filter = getRecordListFilterSql(filter)
+
+    if (filter) {
+      filter = filter.split('AND').filter(v => v.trim()).map((item) => {
+        return '(' + item.trim() + ')'
+      }).join(' AND ')
+    }
 
     return filter ? `${filter}${groupCondition}` : ''
   }).filter(filter => filter)

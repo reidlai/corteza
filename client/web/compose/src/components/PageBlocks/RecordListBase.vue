@@ -111,7 +111,7 @@
               @updateFields="onUpdateFields"
             />
           </div>
-
+          <!-- {{ groupRecordListFilter }} -->
           <div
             v-if="!options.hideSearch"
             class="flex-fill"
@@ -146,12 +146,7 @@
                 class="align-items-center ml-2"
                 @remove="removeFilter(i)"
               >
-                <template v-if="f.drilldown && f.name">
-                  {{ `${f.name} IS ${(f.values || []).join(' OR ')}` }}
-                </template>
-                <template v-else>
-                  {{ f.name }}
-                </template>
+                {{ `${f.name} IS ${(f.values || []).join(' OR ')}` }}
               </b-form-tag>
             </b-form-tags>
           </div>
@@ -747,7 +742,6 @@
 </template>
 <script>
 import axios from 'axios'
-import { isEqual } from 'lodash'
 import { mapGetters, mapActions } from 'vuex'
 import base from './base'
 import FieldViewer from 'corteza-webapp-compose/src/components/ModuleFields/Viewer'
@@ -1061,28 +1055,49 @@ export default {
       return this.selected.map(r => `recordID='${r}'`).join(' OR ')
     },
 
-    groupDrillDownRecordList () {
-      const groupedData = {}
-      for (let i = 0; i < this.recordListFilter.length; i++) {
+    groupRecordListFilter () {
+      const groupedData = []
+
+      const recordListFilter = this.recordListFilter
+
+      // const fields = [...new Set(recordListFilter.map(({ filter }) => filter.map((f) => f.name)).flat().filter(v => v))]
+      console.log('recordListFilter', recordListFilter)
+      for (let i = 0; i < recordListFilter.length; i++) {
         const group = this.recordListFilter[i]
-
-        for (let j = 0; j < group.filter.length; j++) {
-          const filter = group.filter[j]
-          // for (let [index, filter] of group.filter) {
-          let name = filter.name
-          let value = filter.value
-
-          if (!groupedData[name]) {
-            groupedData[name] = {
-              values: [value],
-            }
-          } else {
-            groupedData[name].values.push(value)
-            // groupedData[name].indexes.push(j)
-          }
+        const groupFilter = {
+          filter: group.filter
+            .map(f => {
+              return this.createDefaultFilter(f.condition, { name: f.name, kind: f.kind, isMulti: f.isMulti }, f.value, f.operator)
+            }),
+          groupCondition: recordListFilter.length && recordListFilter.length - 1 !== i ? 'AND' : undefined,
         }
+        groupFilter.filter = groupFilter.filter.sort((a, b) => a.name.localeCompare(b.name))
+
+        const grouped = {}
+        groupFilter.filter.forEach(filter => {
+          if (!grouped[filter.name]) {
+            grouped[filter.name] = []
+          }
+          grouped[filter.name].push(filter)
+        })
+
+        groupFilter.filter = []
+
+        Object.keys(grouped).forEach((key, index) => {
+          const group = grouped[key]
+          group.forEach((filter, idx) => {
+            if (idx === 0) {
+              filter.condition = index === 0 ? 'Where' : 'AND'
+            } else {
+              filter.condition = 'OR'
+            }
+            groupFilter.filter.push(filter)
+          })
+        })
+
+        groupedData.push(groupFilter)
       }
-      console.log('groupedData', groupedData)
+
       return groupedData
     },
   },
@@ -1111,6 +1126,77 @@ export default {
         this.getStorageRecordListConfiguredFields()
         this.prepRecordList()
         this.refresh(true)
+      },
+    },
+
+    groupRecordListFilter: {
+      immediate: true,
+      handler (filterGroup) {
+        this.activeFilters = []
+
+        if (filterGroup && filterGroup.length) {
+          filterGroup.forEach(({ filter: filters }) => {
+            filters.forEach((filter) => {
+              let activeFilterIdx = this.activeFilters.findIndex(({ name }) => name === filter.name)
+
+              console.log('filter operator', filter.operator)
+              switch (filter.operator) {
+                case 'BETWEEN': {
+                  const { start, end } = filter.value
+
+                  if (activeFilterIdx > -1) {
+                    this.activeFilters[activeFilterIdx].values.push(`BETWEEN ${start} AND ${end}`)
+                  } else {
+                    this.activeFilters.push({
+                      id: filter.name,
+                      name: filter.name,
+                      values: [`BETWEEN ${start} AND ${end}`],
+                    })
+                  }
+                  break
+                }
+                case 'NOT BETWEEN': {
+                  const { start, end } = filter.value
+
+                  if (activeFilterIdx > -1) {
+                    this.activeFilters[activeFilterIdx].values.push(`NOT BETWEEN ${start} AND ${end}`)
+                  } else {
+                    this.activeFilters.push({
+                      id: filter.name,
+                      name: filter.name,
+                      values: [`NOT BETWEEN ${start} AND ${end}`],
+                    })
+                  }
+                  break
+                }
+                default: {
+                  if (activeFilterIdx > -1) {
+                    this.activeFilters[activeFilterIdx].values.push(filter.value)
+                  } else {
+                    this.activeFilters.push({
+                      id: filter.name,
+                      name: filter.name,
+                      values: [filter.value],
+                    })
+                  }
+                }
+              }
+              // if (activeFilterIdx > -1) {
+              //   if (filter.condition === 'AND') {
+              //   this.activeFilters[activeFilterIdx].values.push(`BETWEEN ${start} AND ${end}`)
+              //   } else {
+              //   this.activeFilters[activeFilterIdx].values.push(filter.value)
+              //   }
+              // } else {
+              //   this.activeFilters.push({
+              //     id: filter.name,
+              //     name: filter.name,
+              //     values: [filter.value],
+              //   })
+              // }
+            })
+          })
+        }
       },
     },
   },
@@ -1180,33 +1266,6 @@ export default {
     },
 
     onFilter (filter = []) {
-      console.log('filter rl', filter)
-      filter.forEach(f => {
-        console.log('this.activeFilters.find(({ name }) => name === f.name)', this.activeFilters.find(({ name }) => name === f.name))
-        if (this.activeFilters.find(({ name }) => name === f.name)) {
-          const filterPresets = this.filterPresets.find(p => p.name === f.name)
-
-          if (filterPresets) {
-            filterPresets.filter.forEach((filterPreset) => {
-              if (!isEqual(f.filter, filterPreset.filter)) {
-                const filterIndex = this.activeFilters.findIndex(({ name }) => name === f.name)
-                this.activeFilters.splice(filterIndex, 1)
-              }
-            })
-          }
-        }
-
-        if (f.filter.length === 1 && (!f.filter[0].value && !f.filter[0].name)) {
-          const filterIndex = this.activeFilters.indexOf(f.name)
-          this.activeFilters.splice(filterIndex, 1)
-        } else if (!this.activeFilters.find(({ name }) => name === this.$t('recordList.customFilter'))) {
-          this.activeFilters.push({ id: this.activeFilters.length, name: this.$t('recordList.customFilter') })
-          f.name = this.$t('recordList.customFilter')
-        }
-      })
-
-      console.log('filter 2', filter)
-
       this.recordListFilter = filter
       this.setStorageRecordListFilter()
       this.refresh(true)
@@ -1697,8 +1756,8 @@ export default {
       this.processing = true
       this.selected = []
 
-      // Compute query based on query, prefilter and recordListFilter
-      const query = queryToFilter(this.query, this.drillDownFilter || this.prefilter, this.fields.map(({ moduleField }) => moduleField), this.recordListFilter)
+      // Compute query based on query, prefilter and recordLis tFilter
+      const query = queryToFilter(this.query, this.drillDownFilter || this.prefilter, this.fields.map(({ moduleField }) => moduleField), this.groupRecordListFilter)
 
       const { moduleID, namespaceID } = this.recordListModule
 
@@ -1788,7 +1847,7 @@ export default {
           removeItem(`record-list-filters-${this.uniqueID}`)
         } else {
           this.recordListFilter = currentFilters
-          this.activeFilters = currentFilters.map((f, i) => ({ id: i, name: f.name }))
+          // this.activeFilters = currentFilters.map((f, i) => ({ id: i, name: f.name }))
         }
       } catch (e) {
         // Land here if the filter is corrupted
@@ -1855,15 +1914,14 @@ export default {
       this.refresh(true)
     },
 
-    createDefaultFilter (condition, field = {}, value = undefined, drilldown = undefined) {
+    createDefaultFilter (condition, field = {}, value = undefined, operator = undefined) {
       return {
         condition,
         name: field.name,
-        operator: field.isMulti ? 'IN' : '=',
+        operator: operator || (field.isMulti ? 'IN' : '='),
         value,
         kind: field.kind,
         record: new compose.Record(this.recordListModule, {}),
-        drilldown,
       }
     },
 
@@ -1872,6 +1930,7 @@ export default {
         const field = (this.recordListModule.fields.find(f => f.name === fieldName) || {})
 
         if (!this.recordListFilter.length) {
+          console.log('set filter empty 1', this.recordListFilter)
           this.recordListFilter = [
             {
               groupCondition: undefined,
@@ -1881,24 +1940,15 @@ export default {
             },
           ]
         } else {
+          // move to a separate func.
           const { filter } = this.recordListFilter[0]
+          console.log('filter', filter)
           if (!filter.length || (filter.length && !filter[0].name)) {
-            this.recordListFilter[0].filter[0] = this.createDefaultFilter('OR', field, fieldValue, true)
+            this.recordListFilter[0].filter = []
+            this.recordListFilter[0].filter.push(this.createDefaultFilter('Where', field, fieldValue))
           } else {
-            this.recordListFilter[0].filter.push(this.createDefaultFilter('OR', field, fieldValue, true))
+            this.recordListFilter[0].filter.push(this.createDefaultFilter('OR', field, fieldValue))
           }
-        }
-
-        let activeFilterIdx = this.activeFilters.findIndex(({ id }) => id === field.name)
-        if (activeFilterIdx > -1) {
-          this.activeFilters[activeFilterIdx].values.push(fieldValue)
-        } else {
-          this.activeFilters.push({
-            id: field.name,
-            drilldown: true,
-            name: field.name,
-            values: [fieldValue],
-          })
         }
       }
       this.pullRecords(true)
@@ -2003,43 +2053,23 @@ export default {
       }
 
       this.recordListFilter = this.recordListFilter.concat(filter)
-      this.activeFilters.push({ id: this.activeFilters.length, name })
+      this.recordListFilter = this.groupRecordListFilter
+
       this.refresh(true)
     },
 
     removeFilter (filterIndex) {
       const filter = this.activeFilters[filterIndex]
 
-      if (filter.drilldown) {
-        this.recordListFilter = this.recordListFilter.map((group) => {
-          return {
-            ...group,
-            filter: (group.filter || []).filter(({ name, drilldown }) => !(name === filter.id && drilldown)),
-          }
-        })
-
-        this.activeFilters.splice(filterIndex, 1)
-        this.setStorageRecordListFilter()
-        this.refresh(true)
-        return
-      }
-
-      this.activeFilters.splice(filterIndex, 1)
-
-      let temp = this.recordListFilter.map((group) => {
+      this.recordListFilter = this.recordListFilter.map(group => {
         return {
           ...group,
-          filter: (group.filter || []).filter(({ name, drilldown }) => !(name === filter.id && drilldown)),
+          filter: group.filter.filter(({ name }) => name !== filter.name),
         }
-      })
+      }).filter((group) => !group.length)
 
-      console.log('temp', temp)
-
-      // if (this.drillDownFilter && !this.activeFilters.some(({ id }) => String(id).includes('drillDown'))) {
-      //   this.setDrillDownFilter({ prefilter: undefined })
-      // }
-
-      this.recordListFilter = this.recordListFilter.filter(({ name }) => !name || this.activeFilters.find((f) => f.name === name))
+      this.activeFilters.splice(filterIndex, 1)
+      // this.recordListFilter = this.groupRecordListFilter.filter(({ name }) => name !== filter.name)
 
       this.setStorageRecordListFilter()
       this.refresh(true)
