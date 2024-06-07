@@ -629,7 +629,7 @@
 
             <b-col
               cols="12"
-              md="6"
+              lg="6"
             >
               <b-form-group
                 :label="$t('recordList.selectable')"
