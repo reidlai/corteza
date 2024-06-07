@@ -5,5 +5,7 @@ dev:
 	@(cd $(CURDIR)/lib && make dev) || (echo "Failed to build libs"; exit 1)
 	@echo "---Yarning clients---"
 	@(cd $(CURDIR)/client && make yarn) || (echo "Failed to yarn clients"; exit 1)
+	@echo "---Linking libs to clients---"
+	@(cd $(CURDIR)/client && make link) || (echo "Failed to link libs to clients"; exit 1)
 
 .DEFAULT_GOAL := dev
